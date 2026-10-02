@@ -30,42 +30,7 @@ function cleanAffiliateUrl(raw) {
   }
 }
 
-function slugCandidates(rawUrl) {
-  try {
-    const u = new URL(rawUrl);
-
-    const parts = u.pathname
-      .split('/')
-      .filter(Boolean)
-      .map(decodeURIComponent);
-
-    const out = [];
-
-    for (const part of parts) {
-      const p = part.trim();
-
-      if (
-        /^[a-z0-9][a-z0-9_-]{2,}$/i.test(p) &&
-        ![
-          'checkout',
-          'products',
-          'product',
-          'store',
-          'shop',
-          'courses'
-        ].includes(p.toLowerCase())
-      ) {
-        out.push(p);
-      }
-    }
-
-    return [...new Set(out)];
-  } catch {
-    return [];
-  }
-}
-
-async function fetchText(url) {
+async function fetchPage(url) {
   const response = await fetch(url, {
     redirect: 'follow',
     headers: {
@@ -76,127 +41,261 @@ async function fetchText(url) {
     }
   });
 
-  const text = await response.text();
+  const html = await response.text();
 
   return {
     response,
-    text,
+    html,
     finalUrl: response.url || url
   };
 }
 
-/*
- * Essaie plusieurs structures possibles de réponse
- * de l'API Chariow.
- */
-function extractProduct(body) {
-  if (!body) return null;
+function decodeHtml(value = '') {
+  return value
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .trim();
+}
 
-  // { data: { ...produit } }
-  if (
-    body.data &&
-    !Array.isArray(body.data) &&
-    typeof body.data === 'object'
-  ) {
-    // Certains formats peuvent encapsuler encore le produit
-    if (body.data.product) {
-      return body.data.product;
-    }
+function getMeta(html, attribute, value) {
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    return body.data;
+  const patterns = [
+    new RegExp(
+      `<meta[^>]+${attribute}=["']${escaped}["'][^>]+content=["']([^"']*)["']`,
+      'i'
+    ),
+    new RegExp(
+      `<meta[^>]+content=["']([^"']*)["'][^>]+${attribute}=["']${escaped}["']`,
+      'i'
+    )
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match?.[1]) return decodeHtml(match[1]);
   }
 
-  // { data: [ ... ] }
-  if (Array.isArray(body.data) && body.data.length > 0) {
-    return body.data[0];
+  return '';
+}
+
+function getTitle(html) {
+  const ogTitle = getMeta(html, 'property', 'og:title');
+  if (ogTitle) return ogTitle;
+
+  const twitterTitle = getMeta(
+    html,
+    'name',
+    'twitter:title'
+  );
+
+  if (twitterTitle) return twitterTitle;
+
+  const match = html.match(
+    /<title[^>]*>([\s\S]*?)<\/title>/i
+  );
+
+  return match?.[1]
+    ? decodeHtml(match[1].replace(/\s+/g, ' '))
+    : '';
+}
+
+function getDescription(html) {
+  const description =
+    getMeta(html, 'property', 'og:description') ||
+    getMeta(html, 'name', 'description') ||
+    getMeta(html, 'name', 'twitter:description');
+
+  return description
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getImage(html) {
+  return (
+    getMeta(html, 'property', 'og:image') ||
+    getMeta(html, 'name', 'twitter:image') ||
+    getMeta(html, 'property', 'og:image:url') ||
+    ''
+  );
+}
+
+function getPrice(html) {
+  const price =
+    getMeta(html, 'property', 'product:price:amount');
+
+  const currency =
+    getMeta(html, 'property', 'product:price:currency');
+
+  if (price) {
+    return currency
+      ? `${price} ${currency}`
+      : price;
   }
 
-  // { product: { ... } }
-  if (body.product && typeof body.product === 'object') {
-    return body.product;
+  // JSON-LD Product / Offer
+  const jsonLdMatches = [
+    ...html.matchAll(
+      /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+    )
+  ];
+
+  for (const match of jsonLdMatches) {
+    try {
+      const data = JSON.parse(match[1]);
+
+      const objects = Array.isArray(data)
+        ? data
+        : [data];
+
+      for (const item of objects) {
+        const offers = item?.offers;
+
+        if (!offers) continue;
+
+        const offer = Array.isArray(offers)
+          ? offers[0]
+          : offers;
+
+        if (offer?.price != null) {
+          return offer.currency
+            ? `${offer.price} ${offer.currency}`
+            : String(offer.price);
+        }
+      }
+    } catch {}
   }
 
-  // Produit directement à la racine
-  if (body.name || body.slug || body.id) {
-    return body;
+  return '';
+}
+
+function getCategory(html) {
+  return (
+    getMeta(html, 'property', 'product:category') ||
+    getMeta(html, 'name', 'category') ||
+    'RESSOURCE'
+  );
+}
+
+function extractJsonLdProduct(html) {
+  const scripts = [
+    ...html.matchAll(
+      /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+    )
+  ];
+
+  for (const match of scripts) {
+    try {
+      const data = JSON.parse(match[1]);
+
+      const items = Array.isArray(data)
+        ? data
+        : [data];
+
+      for (const item of items) {
+        if (
+          item?.['@type'] === 'Product' ||
+          item?.['@type']?.includes?.('Product')
+        ) {
+          return item;
+        }
+      }
+    } catch {}
   }
 
   return null;
 }
 
-async function getProductByIdOrSlug(identifier, key) {
-  const url =
-    `${API_BASE}/products/` +
-    encodeURIComponent(identifier);
+function extractProductFromPage(html, finalUrl) {
+  const jsonLd = extractJsonLdProduct(html);
 
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${key}`,
-      Accept: 'application/json'
+  const title =
+    getTitle(html) ||
+    jsonLd?.name ||
+    '';
+
+  const description =
+    getDescription(html) ||
+    jsonLd?.description ||
+    '';
+
+  let image =
+    getImage(html);
+
+  if (!image && jsonLd?.image) {
+    image = Array.isArray(jsonLd.image)
+      ? jsonLd.image[0]
+      : jsonLd.image;
+  }
+
+  let price =
+    getPrice(html);
+
+  if (!price && jsonLd?.offers) {
+    const offer = Array.isArray(jsonLd.offers)
+      ? jsonLd.offers[0]
+      : jsonLd.offers;
+
+    if (offer?.price != null) {
+      price = offer.currency
+        ? `${offer.price} ${offer.currency}`
+        : String(offer.price);
     }
-  });
+  }
 
-  const text = await response.text();
+  const category =
+    getCategory(html) ||
+    jsonLd?.category ||
+    'RESSOURCE';
 
-  let body = {};
-
-  try {
-    body = JSON.parse(text);
-  } catch {}
-
-  const product = extractProduct(body);
-
-  return {
-    ok: response.ok,
-    status: response.status,
-    product,
-    body
-  };
-}
-
-async function searchProducts(term, key) {
-  const url = new URL(`${API_BASE}/products`);
-
-  url.searchParams.set('search', term);
-  url.searchParams.set('per_page', '50');
-
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${key}`,
-      Accept: 'application/json'
-    }
-  });
-
-  const text = await response.text();
-
-  let body = {};
-
-  try {
-    body = JSON.parse(text);
-  } catch {}
-
-  let list = [];
-
-  if (Array.isArray(body?.data)) {
-    list = body.data;
-  } else if (Array.isArray(body?.data?.data)) {
-    list = body.data.data;
-  } else if (Array.isArray(body?.products)) {
-    list = body.products;
+  if (!title && !description && !image) {
+    return null;
   }
 
   return {
-    ok: response.ok,
-    status: response.status,
-    products: list,
-    body
+    title: String(title).trim(),
+    description: String(description).trim(),
+    category: String(category).trim(),
+    price: String(price).trim(),
+    image: String(image).trim(),
+    url: finalUrl
   };
 }
 
-function mapProduct(product) {
+async function getProductFromApi(identifier, key) {
+  try {
+    const response = await fetch(
+      `${API_BASE}/products/${encodeURIComponent(identifier)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${key}`,
+          Accept: 'application/json'
+        }
+      }
+    );
+
+    const body = await response.json().catch(() => null);
+
+    if (
+      response.ok &&
+      body?.data &&
+      typeof body.data === 'object' &&
+      !Array.isArray(body.data)
+    ) {
+      return body.data;
+    }
+  } catch {}
+
+  return null;
+}
+
+function mapApiProduct(product) {
   const current =
     product?.pricing?.current_price ??
-    product?.pricing?.currentPrice ??
     product?.price ??
     product?.pricing?.price ??
     null;
@@ -204,24 +303,26 @@ function mapProduct(product) {
   let image =
     product?.pictures?.cover ??
     product?.pictures?.thumbnail ??
-    product?.pictures?.main ??
     product?.image ??
     '';
 
-  // Certains retours API peuvent contenir une image sous forme d'objet.
-  if (typeof image === 'object' && image !== null) {
+  if (
+    typeof image === 'object' &&
+    image !== null
+  ) {
     image =
       image.url ??
       image.src ??
       image.original ??
-      image.large ??
-      image.thumbnail ??
       '';
   }
 
   let price = '';
 
-  if (typeof current === 'object' && current !== null) {
+  if (
+    typeof current === 'object' &&
+    current !== null
+  ) {
     price =
       current.formatted ??
       (
@@ -233,11 +334,10 @@ function mapProduct(product) {
     price = String(current);
   }
 
-  let description = product?.description ?? '';
-
-  if (typeof description !== 'string') {
-    description = '';
-  }
+  let description =
+    typeof product?.description === 'string'
+      ? product.description
+      : '';
 
   description = description
     .replace(/<[^>]*>/g, ' ')
@@ -246,16 +346,15 @@ function mapProduct(product) {
 
   return {
     title:
-      product?.name ??
-      product?.title ??
+      product?.name ||
+      product?.title ||
       '',
 
     description,
 
     category:
-      product?.category?.label ??
-      product?.category?.name ??
-      product?.category ??
+      product?.category?.label ||
+      product?.category?.name ||
       'RESSOURCE',
 
     price,
@@ -263,33 +362,21 @@ function mapProduct(product) {
     image,
 
     slug:
-      product?.slug ??
+      product?.slug ||
       '',
 
     id:
-      product?.id ??
+      product?.id ||
       ''
   };
 }
 
 async function handleImport(request, env) {
-  const key = env.CHARIOW_API_KEY;
-
-  if (!key) {
-    return json(
-      {
-        ok: false,
-        error:
-          'CHARIOW_API_KEY est absent du Worker Cloudflare.'
-      },
-      500
-    );
-  }
-
   const raw =
     new URL(request.url).searchParams.get('url') || '';
 
-  const affiliate = cleanAffiliateUrl(raw);
+  const affiliate =
+    cleanAffiliateUrl(raw);
 
   if (!affiliate) {
     return json(
@@ -303,71 +390,122 @@ async function handleImport(request, env) {
   }
 
   try {
-    // 1. Résolution du lien affilié
-    const resolved = await fetchText(
-      affiliate.toString()
-    );
+    // =====================================================
+    // 1. OUVERTURE DU LIEN AFFILIÉ
+    // =====================================================
 
-    const candidates = slugCandidates(
-      resolved.finalUrl
-    );
+    const page =
+      await fetchPage(affiliate.toString());
 
-    // 2. On essaie directement chaque identifiant trouvé.
-    for (const candidate of candidates) {
-      const result =
-        await getProductByIdOrSlug(candidate, key);
-
-      if (result.product) {
-        return json({
-          ok: true,
-          product: mapProduct(result.product),
-          finalUrl: resolved.finalUrl,
-          identifier: candidate
-        });
-      }
+    if (!page.response.ok) {
+      return json(
+        {
+          ok: false,
+          error:
+            `Chariow a répondu avec le statut ${page.response.status}.`,
+          finalUrl: page.finalUrl
+        },
+        422
+      );
     }
 
-    // 3. Fallback avec la recherche catalogue.
-    for (const candidate of candidates) {
-      const result =
-        await searchProducts(candidate, key);
+    // =====================================================
+    // 2. EXTRACTION DIRECTE DE LA PAGE PRODUIT
+    // =====================================================
 
-      if (result.products.length) {
-        const product =
-          result.products[0];
+    const pageProduct =
+      extractProductFromPage(
+        page.html,
+        page.finalUrl
+      );
 
-        return json({
-          ok: true,
-          product: mapProduct(product),
-          finalUrl: resolved.finalUrl,
-          identifier: candidate
-        });
-      }
+    if (pageProduct) {
+      return json({
+        ok: true,
+
+        product: {
+          title: pageProduct.title,
+          description: pageProduct.description,
+          category: pageProduct.category,
+          price: pageProduct.price,
+          image: pageProduct.image,
+
+          // IMPORTANT :
+          // on conserve TON lien affilié
+          link: affiliate.toString(),
+
+          finalUrl: pageProduct.url
+        }
+      });
     }
 
-    // 4. Si ça échoue encore, on retourne les informations
-    // nécessaires pour diagnostiquer précisément le problème.
-    const diagnostic = {};
+    // =====================================================
+    // 3. SECOURS API CHARIOW
+    // =====================================================
 
-    if (candidates.length) {
-      const test =
-        await getProductByIdOrSlug(
-          candidates[0],
-          key
+    const key =
+      env.CHARIOW_API_KEY;
+
+    if (key) {
+      const match =
+        page.finalUrl.match(
+          /\/(prd_[a-zA-Z0-9_-]+)/
         );
 
-      diagnostic.apiStatus = test.status;
-      diagnostic.apiResponse = test.body;
+      const identifier =
+        match?.[1] || '';
+
+      if (identifier) {
+        const apiProduct =
+          await getProductFromApi(
+            identifier,
+            key
+          );
+
+        if (apiProduct) {
+          return json({
+            ok: true,
+
+            product: {
+              ...mapApiProduct(apiProduct),
+
+              // Toujours garder le lien affilié
+              link: affiliate.toString()
+            }
+          });
+        }
+      }
     }
+
+    // =====================================================
+    // 4. DIAGNOSTIC
+    // =====================================================
 
     return json(
       {
         ok: false,
+
         error:
-          'Le produit n’a pas pu être identifié dans l’API Chariow.',
-        finalUrl: resolved.finalUrl,
-        candidates,
-        diagnostic
+          'La page Chariow a été ouverte, mais aucune information produit exploitable n’a été trouvée.',
+
+        finalUrl: page.finalUrl,
+
+        diagnostic: {
+          htmlLength: page.html.length,
+          hasTitle: Boolean(getTitle(page.html)),
+          hasDescription: Boolean(
+            getDescription(page.html)
+          ),
+          hasImage: Boolean(
+            getImage(page.html)
+          ),
+          hasPrice: Boolean(
+            getPrice(page.html)
+          ),
+          hasJsonLd: Boolean(
+            extractJsonLdProduct(page.html)
+          )
+        }
       },
       422
     );
@@ -378,7 +516,8 @@ async function handleImport(request, env) {
         ok: false,
         error:
           `Import Chariow impossible : ${
-            error?.message || 'erreur inconnue'
+            error?.message ||
+            'erreur inconnue'
           }`
       },
       500
@@ -388,18 +527,25 @@ async function handleImport(request, env) {
 
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url);
+    const url =
+      new URL(request.url);
 
     if (request.method === 'OPTIONS') {
       return json({}, 204);
     }
 
     if (
-      url.pathname === '/api/chariow-import'
+      url.pathname ===
+      '/api/chariow-import'
     ) {
-      return handleImport(request, env);
+      return handleImport(
+        request,
+        env
+      );
     }
 
-    return env.ASSETS.fetch(request);
+    return env.ASSETS.fetch(
+      request
+    );
   }
 };
