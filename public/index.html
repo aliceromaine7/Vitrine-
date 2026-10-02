@@ -30,6 +30,75 @@ footer{border-top:1px solid #20252c;margin-top:35px;padding:28px 0 45px;color:#7
 #admin{display:none;position:fixed;z-index:20;inset:0;background:rgba(2,3,4,.9);backdrop-filter:blur(12px);padding:18px;overflow:auto}.admin{max-width:720px;margin:30px auto;background:#151a20;border:1px solid #343a43;border-radius:20px;padding:22px}.admin h2{margin-top:0}.admin input,.admin textarea{width:100%;background:#0d1014;color:#fff;border:1px solid #333a43;border-radius:9px;padding:11px;margin:5px 0;font:inherit}.admin textarea{min-height:75px}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.admin button{border:0;border-radius:8px;padding:10px 13px;font-weight:800;margin:5px 4px 0 0;cursor:pointer}.add{background:#eee;color:#111}.dark{background:#292f37;color:#fff}.danger{background:#4a2024;color:#fff}.admin-list{display:grid;gap:8px;margin-top:18px}.admin-item{display:flex;align-items:center;gap:10px;padding:9px;background:#0d1014;border:1px solid #303640;border-radius:9px}.admin-item img{width:55px;height:40px;object-fit:cover;border-radius:5px}.admin-item div{flex:1;font-size:11px}
 @media(max-width:800px){.navlinks{display:none}.banner-content{padding:28px}.banner{min-height:310px}.card{flex-basis:82%}.metrics{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid #292f37}.metric:last-child{border-bottom:0}.flow{grid-template-columns:1fr 1fr}.flow div:nth-child(2){border-right:0}.flow div:nth-child(3){border-top:1px solid #292f37}.flow div:nth-child(4){border-top:1px solid #292f37;border-right:0}}
 </style>
+<style id="glass-ui">
+body:before{background:radial-gradient(520px 520px at 85% 5%,var(--o1,rgba(217,205,182,.20)),transparent 70%),radial-gradient(600px 600px at 5% 55%,var(--o2,rgba(90,130,255,.14)),transparent 70%),radial-gradient(500px 500px at 70% 100%,var(--o3,rgba(217,160,90,.14)),transparent 70%);background-size:140% 140%;animation:orbs 18s ease-in-out infinite alternate}
+@keyframes orbs{0%{background-position:0 0}100%{background-position:100% 60%}}
+.wrap{position:relative;z-index:1}
+#bar{position:fixed;top:0;left:0;height:3px;width:0;z-index:50;background:linear-gradient(90deg,#8a7a5c,#f1e6cc,#d9cdb6);box-shadow:0 0 12px rgba(217,205,182,.7)}
+nav{position:sticky;top:12px;z-index:10;margin-top:12px;height:62px;padding:0 10px 0 22px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.06);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);box-shadow:0 8px 30px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.18)}
+.navcta,.buy,.add,.dark,.ctrl,.pill{position:relative;overflow:hidden;color:#fff;border:1px solid rgba(255,255,255,.2);background:linear-gradient(135deg,rgba(255,255,255,.18),rgba(255,255,255,.05));-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 6px 18px rgba(0,0,0,.3);transition:transform .25s,box-shadow .25s,border-color .25s}
+.navcta:after,.buy:after,.add:after{content:"";position:absolute;top:0;left:-80%;width:50%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.45),transparent);transform:skewX(-20deg);animation:shine 3.4s ease-in-out infinite;pointer-events:none}
+@keyframes shine{0%,55%{left:-80%}100%{left:140%}}
+.navcta:hover,.buy:hover,.add:hover,.dark:hover,.ctrl:hover{transform:translateY(-2px) scale(1.04);border-color:rgba(217,205,182,.7);box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 0 22px rgba(217,205,182,.45)}
+.navcta:active,.buy:active,.add:active,.dark:active,.ctrl:active{transform:scale(.96)}
+.buy{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border-radius:999px}
+.banner{background:linear-gradient(120deg,rgba(255,255,255,.08),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.14);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:0 20px 60px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.18)}
+.banner:after{animation:float 9s ease-in-out infinite alternate}
+@keyframes float{0%{transform:translate(0,0) scale(1)}100%{transform:translate(-40px,30px) scale(1.12)}}
+.banner h1{background:linear-gradient(100deg,#fff 20%,#d9cdb6 45%,#fff 60%,#b8ac95 80%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;animation:rise .9s cubic-bezier(.2,.8,.2,1) both,gold 6s linear infinite}
+@keyframes gold{0%{background-position:0 0}100%{background-position:-250% 0}}
+@keyframes rise{0%{opacity:0;transform:translateY(24px);filter:blur(8px)}100%{opacity:1;transform:none;filter:none}}
+.pill{border-radius:999px}
+.card,.promo,.metrics,.flow{background:linear-gradient(160deg,rgba(255,255,255,.09),rgba(255,255,255,.025));border:1px solid rgba(255,255,255,.13);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:0 12px 36px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.15)}
+.card{animation:rise .7s cubic-bezier(.2,.8,.2,1) both;transition:transform .35s cubic-bezier(.2,.8,.2,1),box-shadow .35s,border-color .35s}
+.card:nth-child(2){animation-delay:.1s}.card:nth-child(3){animation-delay:.2s}.card:nth-child(n+4){animation-delay:.3s}
+.card:hover{transform:translateY(-8px) scale(1.015);border-color:rgba(217,205,182,.55);box-shadow:0 22px 50px rgba(0,0,0,.5),0 0 34px rgba(217,205,182,.22)}
+.cover{transition:transform .6s}.card:hover .cover{transform:scale(1.06)}
+.card{overflow:hidden}
+.metric,.flow div{border-color:rgba(255,255,255,.1)}
+.rv{opacity:0;transform:translateY(30px);transition:opacity .8s ease,transform .8s cubic-bezier(.2,.8,.2,1)}
+.rv.in{opacity:1;transform:none}
+footer{border-color:rgba(255,255,255,.1)}
+.admin{background:rgba(20,24,30,.72);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border-color:rgba(255,255,255,.15)}
+@media(max-width:800px){nav{top:8px;height:56px;padding-left:16px}}
+#products.carousel{display:grid;grid-template-rows:repeat(2,auto);grid-auto-flow:column;grid-auto-columns:minmax(285px,calc(33.333% - 11px));align-items:start}
+#products .card{min-width:0;width:auto;flex:none}
+@media(max-width:800px){#products.carousel{grid-auto-columns:80%}}
+.banner{min-height:clamp(430px,64vh,580px)}
+.bn-media,.bn-shade{position:absolute;inset:0}.bn-media{z-index:0}.bn-shade{z-index:1;background:linear-gradient(90deg,rgba(8,10,13,.88) 0%,rgba(8,10,13,.5) 55%,rgba(8,10,13,.12) 100%),linear-gradient(0deg,rgba(8,10,13,.55),transparent 40%)}
+.bn-media:empty+.bn-shade{display:none}
+.bn-s{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1.3s ease}.bn-s.on{opacity:1}
+img.bn-s.on{animation:kb 14s ease-out both}@keyframes kb{0%{transform:scale(1)}100%{transform:scale(1.1)}}
+.banner:after{z-index:1}.banner-content{text-shadow:0 2px 18px rgba(0,0,0,.45)}
+.bn-dots{position:absolute;left:42px;bottom:18px;z-index:3;display:flex;gap:7px}.bn-dots i{width:22px;height:4px;border-radius:4px;background:rgba(255,255,255,.35);transition:.4s}.bn-dots i.on{width:38px;background:#fff}
+.bn-cta{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}.bn-main{padding:14px 26px;font-size:12px;letter-spacing:.06em;background:linear-gradient(135deg,rgba(217,205,182,.6),rgba(217,205,182,.18))}
+@media(max-width:800px){.banner{min-height:470px}.bn-dots{left:28px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.rv{opacity:1;transform:none}}
+</style>
+<script>
+(function(){try{
+var K="digital_select_theme",D={bg:"#0a0c0f",ac:"#d9cdb6"},
+P=[["Noir doré","#0a0c0f","#d9cdb6"],["Vert sauge","#14201a","#9fc9a2"],["Bleu nuit","#0a1020","#6f9bff"],["Violet","#150d24","#b38cff"],["Bordeaux","#1f0b12","#ff8aa1"]],t;
+try{t=JSON.parse(localStorage.getItem(K)||"null")}catch(e){}t=t||{bg:D.bg,ac:D.ac};
+function rgb(h){return[1,3,5].map(function(i){return parseInt(h.substr(i,2),16)})}
+function hex(a){return"#"+a.map(function(v){v=Math.max(0,Math.min(255,Math.round(v)));return(v<16?"0":"")+v.toString(16)}).join("")}
+function apply(){var c=rgb(t.bg),L=(.299*c[0]+.587*c[1]+.114*c[2])/255;if(L>.22)c=c.map(function(v){return v*.22/L});
+var bg=hex(c),a=rgb(t.ac),r=document.documentElement.style;
+function ra(x){return"rgba("+a.join(",")+","+x+")"}
+r.setProperty("--bg",bg);r.setProperty("--gold",t.ac);r.setProperty("--o1",ra(.22));r.setProperty("--o2",ra(.12));r.setProperty("--o3",ra(.15));
+var m=document.querySelector('meta[name="theme-color"]');if(m)m.content=bg}
+function sv(){try{localStorage.setItem(K,JSON.stringify(t))}catch(e){}apply();sync()}
+function sync(){var b=document.getElementById("thBg"),c=document.getElementById("thAc");if(b)b.value=t.bg;if(c)c.value=t.ac}
+window.thSet=function(i){t={bg:P[i][1],ac:P[i][2]};sv()};
+window.thReset=function(){t={bg:D.bg,ac:D.ac};sv()};
+apply();
+document.addEventListener("DOMContentLoaded",function(){
+var p=document.getElementById("thPre");if(p)p.innerHTML=P.map(function(x,i){return'<button type="button" title="'+x[0]+'" onclick="thSet('+i+')" style="width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.3);cursor:pointer;background:linear-gradient(135deg,'+x[1]+' 50%,'+x[2]+' 50%)"></button>'}).join("");
+document.getElementById("thBg").addEventListener("input",function(){t.bg=this.value;sv()});
+document.getElementById("thAc").addEventListener("input",function(){t.ac=this.value;sv()});
+sync()});
+}catch(e){console.error(e)}})();
+</script>
 </head>
 <body>
 <div class="wrap">
@@ -37,11 +106,13 @@ footer{border-top:1px solid #20252c;margin-top:35px;padding:28px 0 45px;color:#7
 
 <section class="hero">
 <div class="banner">
+<div class="bn-media" id="bnMedia"></div><div class="bn-shade"></div><div class="bn-dots" id="bnDots"></div>
 <div class="banner-content">
 <div class="eyebrow">Une sélection pour avancer</div>
 <h1>Apprends. Crée.<br>Avance.</h1>
 <p>Des formations et ressources digitales pour passer de l’idée à l’action, une étape après l’autre.</p>
 <div class="mini"><span class="pill">IA & création</span><span class="pill">Business digital</span><span class="pill">YouTube</span></div>
+<div class="bn-cta"><a class="navcta bn-main" href="#produits">VOIR LES PRODUITS →</a></div>
 </div>
 </div>
 </section>
@@ -76,7 +147,14 @@ footer{border-top:1px solid #20252c;margin-top:35px;padding:28px 0 45px;color:#7
 
 <div id="admin"><div class="admin">
 <div style="display:flex;justify-content:space-between;align-items:center"><h2>Ajouter des produits</h2><button class="dark" onclick="closeAdmin()">Fermer</button></div>
+<div style="margin:12px 0;padding:14px;border:1px solid #343a43;border-radius:12px;background:#101419"><b style="display:block;margin-bottom:9px">🎨 Couleurs du site</b>
+<div id="thPre" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px"></div>
+<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;color:#c9ced6"><label>Fond <input id="thBg" type="color" style="width:48px;height:34px;padding:2px"></label><label>Accent <input id="thAc" type="color" style="width:48px;height:34px;padding:2px"></label><button class="dark" type="button" onclick="thReset()">Réinitialiser</button></div></div>
 <p style="font-size:12px;color:#8d949e">Ajoute un produit manuellement ou colle un lien Chariow pour récupérer automatiquement ses informations.</p>
+<div style="margin:12px 0;padding:14px;border:1px solid #343a43;border-radius:12px;background:#101419"><b style="display:block;margin-bottom:7px">🎬 Bannière (photos / vidéos courtes)</b>
+<input id="bnUrl" placeholder="Lien ou nom de fichier : photo.jpg / video.mp4"><input id="bnFile" type="file" accept="image/*">
+<button class="add" type="button" onclick="bnAdd()">+ Ajouter à la bannière</button> <button class="dark" type="button" onclick="bnClear()">Vider</button>
+<div style="font-size:11px;color:#8d949e;margin-top:7px">Photo : choisis un fichier. Vidéo : mets le .mp4 dans le dossier public et tape son nom ci-dessus.</div><div id="bnList" style="font-size:12px;color:#c9ced6;margin-top:8px"></div></div>
 <div style="margin:12px 0;padding:14px;border:1px solid #343a43;border-radius:12px;background:#101419">
   <b style="display:block;margin-bottom:7px">⚡ Import automatique Chariow</b>
   <input id="chariowUrl" placeholder="https://chariow.ly/xxxxxxxxxx">
@@ -148,5 +226,37 @@ function closeAdmin(){document.getElementById("admin").style.display="none"}
 function exportData(){const b=new Blob([JSON.stringify(products,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="mes-produits.json";a.click()}
 function importData(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{products=JSON.parse(r.result);save();alert("Produits importés.")}catch{alert("Fichier invalide.")}};r.readAsText(f)}
 render();
+</script>
+<script>
+(function(){try{
+var b=document.createElement("div");b.id="bar";document.body.appendChild(b);
+addEventListener("scroll",function(){var h=document.documentElement;b.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight||1)*100)+"%"},{passive:true});
+var els=document.querySelectorAll(".section,.metric,.flow div");
+if(!("IntersectionObserver" in window)){return}
+var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target)}})},{threshold:.12});
+els.forEach(function(el,i){el.classList.add("rv");el.style.transitionDelay=(el.matches(".metric,.flow div")?(i%4)*90:0)+"ms";io.observe(el)});
+}catch(e){}})();
+</script>
+<script>
+(function(){try{
+var K="digital_select_banner",$=function(i){return document.getElementById(i)},sl,idx=0,tm;
+try{sl=JSON.parse(localStorage.getItem(K)||"[]")}catch(e){sl=[]}
+function isV(u){return /\.(mp4|webm|mov|m4v)(\?|$)/i.test(u)}
+function sv(){try{localStorage.setItem(K,JSON.stringify(sl))}catch(e){alert("Stockage plein : utilise une image plus légère ou un lien.")}draw()}
+function go(n){var el=document.querySelectorAll("#bnMedia .bn-s"),dt=document.querySelectorAll("#bnDots i");if(!el.length)return;idx=(n+el.length)%el.length;
+el.forEach(function(e,i){var on=i===idx;e.classList.toggle("on",on);if(e.tagName==="VIDEO"){e.muted=true;if(on){e.currentTime=0;var p=e.play();if(p&&p.catch)p.catch(function(){})}else e.pause()}});
+dt.forEach(function(e,i){e.classList.toggle("on",i===idx)})}
+function draw(){$("bnMedia").innerHTML=sl.map(function(s){return s.v?'<video class="bn-s" src="'+esc(s.src)+'" muted loop playsinline preload="auto"></video>':'<img class="bn-s" src="'+esc(s.src)+'" alt="">'}).join("");
+$("bnDots").innerHTML=sl.length>1?sl.map(function(){return"<i></i>"}).join(""):"";
+var l=$("bnList");if(l)l.innerHTML=sl.map(function(s,i){return'<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0">'+(s.v?"🎞 Vidéo ":"🖼 Photo ")+(i+1)+' <button class="danger" onclick="bnDel('+i+')">✕</button></div>'}).join("");
+clearInterval(tm);go(0);if(sl.length>1)tm=setInterval(function(){go(idx+1)},6000)}
+window.bnDel=function(i){sl.splice(i,1);sv()};
+window.bnClear=function(){if(confirm("Vider la bannière ?")){sl=[];sv()}};
+window.bnAdd=function(){var f=$("bnFile").files[0],u=$("bnUrl").value.trim();
+function done(x){sl.push(x);$("bnUrl").value="";$("bnFile").value="";sv()}
+if(f){var r=new FileReader();r.onload=function(){var im=new Image();im.onload=function(){var k=Math.min(1,1600/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext("2d").drawImage(im,0,0,c.width,c.height);done({v:0,src:c.toDataURL("image/jpeg",.78)})};im.src=r.result};r.readAsDataURL(f)}
+else if(u){done({v:isV(u)?1:0,src:u})}else alert("Choisis une photo ou colle un lien / nom de fichier.")};
+draw();
+}catch(e){console.error(e)}})();
 </script>
 </body></html>
