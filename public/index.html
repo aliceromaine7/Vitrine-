@@ -84,7 +84,7 @@ footer{border-top:1px solid #20252c;margin-top:35px;padding:28px 0 45px;color:#7
   <div id="chariowStatus" style="font-size:11px;color:#8d949e;margin-top:7px"></div>
 </div>
 <input id="title" placeholder="Nom du produit"><div class="row"><input id="category" placeholder="Catégorie"><input id="price" placeholder="Prix"></div><textarea id="description" placeholder="Description"></textarea><input id="link" placeholder="Lien affilié"><input id="image" type="file" accept="image/*">
-<button class="add" onclick="addProduct()">+ Ajouter</button><button class="dark" onclick="exportData()">Exporter</button><input id="importFile" type="file" accept=".json" style="display:none" onchange="importData(event)"><button class="dark" onclick="document.getElementById('importFile').click()">Importer</button>
+<button class="add" type="button" id="addProductBtn" onclick="addProduct();return false;">+ Ajouter</button><button class="dark" onclick="exportData()">Exporter</button><input id="importFile" type="file" accept=".json" style="display:none" onchange="importData(event)"><button class="dark" onclick="document.getElementById('importFile').click()">Importer</button>
 <div class="admin-list" id="adminList"></div>
 </div></div>
 
@@ -95,7 +95,50 @@ function esc(s){return String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&l
 function render(){const e=document.getElementById("products");e.innerHTML=products.map(p=>`<article class="card"><img class="cover" src="${p.image}" alt="${esc(p.title)}"><div class="body"><div class="cat">${esc(p.category)}</div><h3>${esc(p.title)}</h3><p>${esc(p.description)}</p><div class="foot"><span class="price">${esc(p.price)}</span><a class="buy" href="${esc(p.link)}" target="_blank" rel="noopener">DÉCOUVRIR →</a></div></div></article>`).join("");}
 function move(dir){document.getElementById("products").scrollBy({left:dir*310,behavior:"smooth"});}
 function save(){localStorage.setItem("digital_select_products",JSON.stringify(products));render();renderAdmin();}
-function addProduct(){const file=document.getElementById("image").files[0];const done=image=>{const p={title:document.getElementById("title").value.trim(),category:document.getElementById("category").value.trim()||"RESSOURCE",price:document.getElementById("price").value.trim(),description:document.getElementById("description").value.trim(),link:document.getElementById("link").value.trim(),image:image};if(!p.title||!p.link){alert("Ajoute au minimum le nom et le lien.");return}products.push(p);save();document.querySelectorAll("#admin input,#admin textarea").forEach(x=>{if(x.type!=="file"&&x.id!=="chariowUrl")x.value=""});document.getElementById("image").value=""};if(file){const r=new FileReader();r.onload=()=>done(r.result);r.readAsDataURL(file)}else if(window.__chariowImportedImage){const u=window.__chariowImportedImage;window.__chariowImportedImage="";done(u)}else done("data:image/svg+xml;charset=utf-8,"+encodeURIComponent("<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'900\' height=\'650\'><rect width=\'100%\' height=\'100%\' fill=\'#20252c\'/><text x=\'50%\' y=\'50%\' fill=\'white\' font-size=\'42\' text-anchor=\'middle\' font-family=\'Arial\'>NOUVEAU PRODUIT</text></svg>"))}
+function addProduct(){
+  try{
+    const title=document.getElementById("title").value.trim();
+    const category=document.getElementById("category").value.trim()||"RESSOURCE";
+    const price=document.getElementById("price").value.trim();
+    const description=document.getElementById("description").value.trim();
+    const link=document.getElementById("link").value.trim();
+    const file=document.getElementById("image").files[0];
+
+    if(!title||!link){
+      alert("Ajoute au minimum le nom et le lien.");
+      return false;
+    }
+
+    const done=(image)=>{
+      const p={title,category,price,description,link,image};
+      products.push(p);
+      save();
+      window.__chariowImportedImage="";
+      document.querySelectorAll("#admin input,#admin textarea").forEach(x=>{
+        if(x.type!=="file"&&x.id!=="chariowUrl") x.value="";
+      });
+      const imageInput=document.getElementById("image");
+      if(imageInput) imageInput.value="";
+      const status=document.getElementById("chariowStatus");
+      if(status) status.textContent="✓ Produit ajouté à la vitrine.";
+    };
+
+    if(file){
+      const r=new FileReader();
+      r.onload=()=>done(r.result);
+      r.onerror=()=>alert("Impossible de lire l'image.");
+      r.readAsDataURL(file);
+    }else if(window.__chariowImportedImage){
+      done(window.__chariowImportedImage);
+    }else{
+      done("data:image/svg+xml;charset=utf-8,"+encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='900' height='650'><rect width='100%' height='100%' fill='#20252c'/><text x='50%' y='50%' fill='white' font-size='42' text-anchor='middle' font-family='Arial'>NOUVEAU PRODUIT</text></svg>"));
+    }
+  }catch(e){
+    console.error("Erreur addProduct:",e);
+    alert("Impossible d'ajouter le produit : "+(e&&e.message?e.message:e));
+  }
+  return false;
+}
 async function importChariow(){const input=document.getElementById("chariowUrl"),status=document.getElementById("chariowStatus"),url=input.value.trim();if(!url){status.textContent="Colle d’abord ton lien Chariow.";return}status.textContent="⏳ Récupération des informations…";try{const r=await fetch("/api/chariow-import?url="+encodeURIComponent(url),{headers:{Accept:"application/json"}});const data=await r.json().catch(()=>({}));if(!r.ok||!data.ok)throw new Error(data.error||"Import impossible");const p=data.product||{};document.getElementById("title").value=p.title||"";document.getElementById("category").value=p.category||"RESSOURCE";document.getElementById("price").value=p.price||"";document.getElementById("description").value=p.description||"";document.getElementById("link").value=url;status.textContent="✓ Informations récupérées. Vérifie puis clique sur + Ajouter.";if(p.image){status.innerHTML+=' <img src="'+String(p.image).replace(/&/g,"&amp;").replace(/"/g,"&quot;")+ '" style="width:70px;height:45px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-left:8px">';document.getElementById("image").value="";window.__chariowImportedImage=p.image}}catch(e){status.textContent="❌ "+e.message}}
 function removeProduct(i){if(confirm("Supprimer ce produit ?")){products.splice(i,1);save()}}
 function renderAdmin(){document.getElementById("adminList").innerHTML=products.map((p,i)=>`<div class="admin-item"><img src="${p.image}"><div><b>${esc(p.title)}</b><br><span style="color:#808892">${esc(p.price)}</span></div><button class="danger" onclick="removeProduct(${i})">Supprimer</button></div>`).join("")}
