@@ -309,6 +309,10 @@ sync()});
   <button class="add" type="button" onclick="importChariow()">Importer automatiquement</button>
   <div id="chariowStatus" style="font-size:11px;color:#8d949e;margin-top:7px"></div>
 </div>
+<div id="mailBox" style="display:none;margin:12px 0;padding:14px;border:1px solid #343a43;border-radius:12px;background:#101419"><b style="display:block;margin-bottom:7px">📧 E-mail prêt à envoyer</b>
+<input id="mailSub" readonly><button class="dark" type="button" onclick="mailCopy('mailSub')">Copier l’objet</button>
+<textarea id="mailBody" style="height:150px"></textarea><button class="add" type="button" onclick="mailCopy('mailBody')">Copier le message</button>
+<div style="font-size:11px;color:#8d949e;margin-top:7px">Colle-les dans ta campagne Brevo ou MailerLite.</div></div>
 <input id="title" placeholder="Nom du produit"><div class="row"><input id="category" placeholder="Catégorie"><input id="price" placeholder="Prix"></div><textarea id="description" placeholder="Description"></textarea><input id="link" placeholder="Lien affilié"><input id="image" type="file" accept="image/*">
 <button class="dark" type="button" onclick="genImage()">✨ Générer l’image avec l’IA</button>
 <button class="add" type="button" id="addProductBtn" onclick="addProduct();return false;">+ Ajouter</button><button class="dark" onclick="exportData()">Exporter</button><input id="importFile" type="file" accept=".json" style="display:none" onchange="importData(event)"><button class="dark" onclick="document.getElementById('importFile').click()">Importer</button>
@@ -343,7 +347,7 @@ function addProduct(){
       save();
       window.__chariowImportedImage="";
       document.querySelectorAll("#admin input,#admin textarea").forEach(x=>{
-        if(x.type!=="file"&&x.id!=="chariowUrl"&&x.type!=="color") x.value="";
+        if(x.type!=="file"&&x.id!=="chariowUrl"&&x.type!=="color"&&x.id.indexOf("mail")!==0) x.value="";
       });
       const imageInput=document.getElementById("image");
       if(imageInput) imageInput.value="";
@@ -451,7 +455,13 @@ st.innerHTML="✓ Image créée. Vérifie puis clique sur + Ajouter. <img src='"
 catch(e){st.textContent="⚠️ Image IA indisponible ("+e.message+")."+(window.__chariowImportedImage?" L’image Chariow est conservée.":"")}}
 window.genImage=gen;
 var oi=window.importChariow;
-window.importChariow=async function(){await oi();var st=$("chariowStatus");if(st.textContent.indexOf("✓")===0&&$("title").value.trim())await gen()};
+function mailFor(p){var t=(p.title||"").trim(),d=(p.description||"").replace(/\s+/g," ").trim(),m=d.match(/^.{20,220}?[.!?](\s|$)/),ph=m?m[0].trim():d.slice(0,200);if(!ph)ph="Une ressource pensée pour t’aider à passer à l’étape suivante.";
+$("mailSub").value="Nouveau : "+t+" 🚀";
+$("mailBody").value="Salut !\n\nUne nouvelle ressource vient d’arriver sur Digital Select : "+t+".\n\n"+ph+"\n\n👉 Découvrir la formation : "+(p.link||"")+"\n\nÀ très vite !";
+$("mailBox").style.display="block"}
+window.mailCopy=function(id){var e=$(id);e.select();function ok(){alert("Copié ✅")}function fb(){document.execCommand("copy");ok()}try{navigator.clipboard.writeText(e.value).then(ok,fb)}catch(x){fb()}};
+window.importChariow=async function(){await oi();var st=$("chariowStatus");if(st.textContent.indexOf("✓")===0&&$("title").value.trim()){mailFor({title:$("title").value,description:$("description").value,link:$("link").value});await gen()}};
+var ra=renderAdmin;renderAdmin=function(){ra();document.querySelectorAll("#adminList .admin-item").forEach(function(el,i){var d=el.querySelector("div");if(!d||el.querySelector(".mailbtn")||!products[i])return;var b=document.createElement("button");b.className="dark mailbtn";b.type="button";b.textContent="✉ E-mail";b.style.cssText="display:block;margin-top:6px";b.onclick=function(){mailFor(products[i]);$("mailBox").scrollIntoView({behavior:"smooth",block:"center"})};d.appendChild(b)})};
 var gp=$("gp");
 function openPop(){gp.classList.add("open");gp.setAttribute("aria-hidden","false")}
 function closePop(r){gp.classList.remove("open");gp.setAttribute("aria-hidden","true");if(r)try{L.setItem("digital_select_pop",String(Date.now()))}catch(e){}}
