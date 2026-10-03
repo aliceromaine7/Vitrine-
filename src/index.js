@@ -346,11 +346,8 @@ async function handleSite(request, env) {
   }
 
   if (request.method === 'POST') {
-    const password = request.headers.get('x-admin-password') || '';
-
-    if (!env.ADMIN_PASSWORD || !(await samePassword(password, env.ADMIN_PASSWORD))) {
-      return json({ ok: false, error: 'Mot de passe incorrect.' }, 401);
-    }
+    const denied = await guard(request, env);
+    if (denied) return denied;
 
     const text = await request.text();
 
@@ -376,9 +373,43 @@ async function handleSite(request, env) {
 // NEWSLETTER : inscription publique + liste protégée
 // =====================================================
 
-async function isAdmin(request, env) {
+// Vérifie le mot de passe admin et limite les essais ratés (8 par IP / 15 min).
+// Retourne null si tout est bon, sinon la réponse d'erreur à renvoyer.
+async function guard(request, env) {
+  if (!env.SITE || !env.ADMIN_PASSWORD) {
+    return json({ ok: false, error: 'Configuration manquante.' }, 500);
+  }
+
+  const key = 'rl:' + (request.headers.get('cf-connecting-ip') || 'unknown');
+  const attempts = parseInt((await env.SITE.get(key)) || '0', 10);
+
+  if (attempts >= 8) {
+    return json({ ok: false, error: 'Trop d’essais. Réessaie dans 15 minutes.' }, 429);
+  }
+
   const password = request.headers.get('x-admin-password') || '';
-  return Boolean(env.ADMIN_PASSWORD) && (await samePassword(password, env.ADMIN_PASSWORD));
+
+  if (!(await samePassword(password, env.ADMIN_PASSWORD))) {
+    await env.SITE.put(key, String(attempts + 1), { expirationTtl: 900 });
+    return json({ ok: false, error: 'Mot de passe incorrect.' }, 401);
+  }
+
+  if (attempts) await env.SITE.delete(key);
+  return null;
+}
+
+function slugify(text) {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
+function attr(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
 async function handleSubscribe(request, env) {
@@ -407,9 +438,8 @@ async function handleSubscribe(request, env) {
 
 async function handleSubscribers(request, env) {
   if (!env.SITE) return json({ ok: false, error: 'Stockage KV non configuré.' }, 500);
-  if (!(await isAdmin(request, env))) {
-    return json({ ok: false, error: 'Mot de passe incorrect.' }, 401);
-  }
+  const denied = await guard(request, env);
+  if (denied) return denied;
 
   const emails = [];
   let cursor;
@@ -430,7 +460,8 @@ async function handleSubscribers(request, env) {
 async function handleGenerateImage(request, env) {
   if (!env.AI || !env.SITE) return json({ ok: false, error: 'IA non configurée.' }, 500);
   if (request.method !== 'POST') return json({ ok: false, error: 'Méthode non autorisée.' }, 405);
-  if (!(await isAdmin(request, env))) return json({ ok: false, error: 'Mot de passe incorrect.' }, 401);
+  const denied = await guard(request, env);
+  if (denied) return denied;
 
   let body;
   try {
@@ -446,15 +477,38 @@ async function handleGenerateImage(request, env) {
   const topic = clean(body?.category, 40);
   const desc = clean(body?.description, 300);
 
-  const prompt =
-    `Premium cover illustration for an online course called "${title}". ` +
-    `Topic: ${topic}. ${desc} ` +
-    'Modern 3D render style, one centered main subject that clearly represents the topic, ' +
-    'soft glowing gold and teal lighting, dark elegant background, depth of field, high detail, ' +
-    'no text, no letters, no watermark.';
+  const styles = {
+    '3d': 'Premium 3D render, glossy materials, soft glowing gold and teal lighting, dark elegant background, depth of field, high detail',
+    minimal: 'Minimalist flat vector illustration, bold geometric shapes, limited elegant color palette, clean composition, soft gradients, generous negative space',
+    photo: 'Professional studio product photography, realistic, soft cinematic lighting, shallow depth of field, clean dark backdrop, ultra detailed',
+    neon: 'Futuristic neon glow, sleek gradient lighting, dark background, vibrant magenta and cyan accents, high contrast'
+  };
+  const style = styles[body?.style] || styles['3d'];
+
+  // Étape 1 : une IA de texte imagine une scène visuelle précise (en anglais)
+  let scene = `${title}. ${desc}`;
+  try {
+    const llm = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You write prompts for an image generator. Given an online course (title, category, description, possibly in French), ' +
+            'describe in ONE sentence of at most 35 English words a single concrete visual scene or object metaphor that represents the topic. ' +
+            'No text, no letters, no logos, no human faces. Output only the sentence.'
+        },
+        { role: 'user', content: `Title: ${title}\nCategory: ${topic}\nDescription: ${desc}` }
+      ],
+      max_tokens: 90
+    });
+    const text = String(llm?.response || '').replace(/\s+/g, ' ').replace(/^["']|["']$/g, '').trim().slice(0, 300);
+    if (text.length > 15) scene = text;
+  } catch {}
+
+  const prompt = `${scene} ${style}, centered main subject, no text, no letters, no watermark.`;
 
   try {
-    const out = await env.AI.run('@cf/black-forest-labs/flux-1-schnell', { prompt, steps: 6 });
+    const out = await env.AI.run('@cf/black-forest-labs/flux-1-schnell', { prompt, steps: 8 });
     if (!out?.image) throw new Error('empty');
 
     const bytes = Uint8Array.from(atob(out.image), (c) => c.charCodeAt(0));
@@ -481,6 +535,138 @@ async function handleImage(env, id) {
   });
 }
 
+// =====================================================
+// STATISTIQUES (visites + clics « Acheter »)
+// =====================================================
+
+async function handleTrack(request, env) {
+  if (!env.SITE || request.method !== 'POST') return json({ ok: false }, 405);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ ok: false }, 400);
+  }
+
+  if (body?.type === 'visit') {
+    const key = 'vis:' + new Date().toISOString().slice(0, 10);
+    const n = parseInt((await env.SITE.get(key)) || '0', 10);
+    await env.SITE.put(key, String(n + 1), { expirationTtl: 7776000 });
+    return json({ ok: true });
+  }
+
+  if (body?.type === 'click') {
+    const title = String(body.title || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const slug = slugify(title);
+    if (!slug) return json({ ok: false }, 400);
+
+    const key = 'clk:' + slug;
+    let current = { t: title, n: 0 };
+    try {
+      current = JSON.parse((await env.SITE.get(key)) || 'null') || current;
+    } catch {}
+
+    current.t = title;
+    current.n = (current.n || 0) + 1;
+    await env.SITE.put(key, JSON.stringify(current));
+    return json({ ok: true });
+  }
+
+  return json({ ok: false }, 400);
+}
+
+async function handleStats(request, env) {
+  const denied = await guard(request, env);
+  if (denied) return denied;
+
+  const list = await env.SITE.list({ prefix: 'clk:', limit: 35 });
+  const values = await Promise.all(list.keys.map((k) => env.SITE.get(k.name)));
+  const clicks = [];
+
+  for (const v of values) {
+    try {
+      const o = JSON.parse(v);
+      if (o?.t) clicks.push({ t: o.t, n: o.n || 0 });
+    } catch {}
+  }
+  clicks.sort((a, b) => b.n - a.n);
+
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    days.push(new Date(Date.now() - i * 86400000).toISOString().slice(0, 10));
+  }
+  const counts = await Promise.all(days.map((d) => env.SITE.get('vis:' + d)));
+  const visits = days.map((d, i) => ({ d, n: parseInt(counts[i] || '0', 10) }));
+
+  return json({ ok: true, clicks, visits });
+}
+
+async function handleSubscriberDelete(request, env) {
+  if (request.method !== 'POST') return json({ ok: false, error: 'Méthode non autorisée.' }, 405);
+
+  const denied = await guard(request, env);
+  if (denied) return denied;
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ ok: false, error: 'Données invalides.' }, 400);
+  }
+
+  const email = String(body?.email || '').trim().toLowerCase();
+  if (!email || email.length > 254) return json({ ok: false, error: 'Adresse invalide.' }, 400);
+
+  await env.SITE.delete('sub:' + email);
+  return json({ ok: true });
+}
+
+// =====================================================
+// PAGE PRODUIT PARTAGEABLE  /p/nom-du-produit
+// (aperçu correct sur WhatsApp, TikTok, Facebook…)
+// =====================================================
+
+async function handleProduct(request, env, url) {
+  const home = await env.ASSETS.fetch(new Request(new URL('/', url)));
+
+  try {
+    const slug = decodeURIComponent(url.pathname.slice(3));
+    const raw = env.SITE ? await env.SITE.get('site') : null;
+    const products = raw ? JSON.parse(raw).products || [] : [];
+    const product = products.find((p) => slugify(p.title) === slug);
+
+    if (!product) return home;
+
+    const title = `${product.title} | Digital Select`;
+    let desc = String(product.description || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (product.price) desc = `${product.price} — ${desc}`.trim();
+
+    const img = String(product.image || '');
+    const image = img.startsWith('/') ? url.origin + img : img.startsWith('http') ? img : '';
+
+    const tags = [
+      ['og:type', 'website'],
+      ['og:title', title],
+      ['og:description', desc],
+      ['og:url', url.href]
+    ];
+    if (image) tags.push(['og:image', image]);
+
+    const html =
+      tags.map(([k, v]) => `<meta property="${k}" content="${attr(v)}">`).join('') +
+      `<meta name="twitter:card" content="${image ? 'summary_large_image' : 'summary'}">` +
+      `<meta name="description" content="${attr(desc)}">`;
+
+    return new HTMLRewriter()
+      .on('head', { element(e) { e.append(html, { html: true }); } })
+      .on('title', { element(e) { e.setInnerContent(title); } })
+      .transform(home);
+  } catch {
+    return home;
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -491,6 +677,22 @@ export default {
 
     if (url.pathname === '/api/site') {
       return handleSite(request, env);
+    }
+
+    if (url.pathname.startsWith('/p/')) {
+      return handleProduct(request, env, url);
+    }
+
+    if (url.pathname === '/api/track') {
+      return handleTrack(request, env);
+    }
+
+    if (url.pathname === '/api/stats') {
+      return handleStats(request, env);
+    }
+
+    if (url.pathname === '/api/subscribers/delete') {
+      return handleSubscriberDelete(request, env);
     }
 
     if (url.pathname === '/api/generate-image') {
