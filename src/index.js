@@ -372,6 +372,115 @@ async function handleSite(request, env) {
   return json({ ok: false, error: 'Méthode non autorisée.' }, 405);
 }
 
+// =====================================================
+// NEWSLETTER : inscription publique + liste protégée
+// =====================================================
+
+async function isAdmin(request, env) {
+  const password = request.headers.get('x-admin-password') || '';
+  return Boolean(env.ADMIN_PASSWORD) && (await samePassword(password, env.ADMIN_PASSWORD));
+}
+
+async function handleSubscribe(request, env) {
+  if (!env.SITE) return json({ ok: false, error: 'Stockage KV non configuré.' }, 500);
+  if (request.method !== 'POST') return json({ ok: false, error: 'Méthode non autorisée.' }, 405);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ ok: false, error: 'Données invalides.' }, 400);
+  }
+
+  // Champ piège pour les robots
+  if (body?.hp) return json({ ok: true });
+
+  const email = String(body?.email || '').trim().toLowerCase();
+
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    return json({ ok: false, error: 'Adresse e-mail invalide.' }, 400);
+  }
+
+  await env.SITE.put('sub:' + email, JSON.stringify({ date: new Date().toISOString() }));
+  return json({ ok: true });
+}
+
+async function handleSubscribers(request, env) {
+  if (!env.SITE) return json({ ok: false, error: 'Stockage KV non configuré.' }, 500);
+  if (!(await isAdmin(request, env))) {
+    return json({ ok: false, error: 'Mot de passe incorrect.' }, 401);
+  }
+
+  const emails = [];
+  let cursor;
+
+  do {
+    const page = await env.SITE.list({ prefix: 'sub:', cursor });
+    for (const key of page.keys) emails.push(key.name.slice(4));
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+
+  return json({ ok: true, emails });
+}
+
+// =====================================================
+// IMAGES GÉNÉRÉES PAR IA (Cloudflare Workers AI)
+// =====================================================
+
+async function handleGenerateImage(request, env) {
+  if (!env.AI || !env.SITE) return json({ ok: false, error: 'IA non configurée.' }, 500);
+  if (request.method !== 'POST') return json({ ok: false, error: 'Méthode non autorisée.' }, 405);
+  if (!(await isAdmin(request, env))) return json({ ok: false, error: 'Mot de passe incorrect.' }, 401);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ ok: false, error: 'Données invalides.' }, 400);
+  }
+
+  const clean = (v, n) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const title = clean(body?.title, 120);
+  if (!title) return json({ ok: false, error: 'Titre manquant.' }, 400);
+
+  const topic = clean(body?.category, 40);
+  const desc = clean(body?.description, 300);
+
+  const prompt =
+    `Premium cover illustration for an online course called "${title}". ` +
+    `Topic: ${topic}. ${desc} ` +
+    'Modern 3D render style, one centered main subject that clearly represents the topic, ' +
+    'soft glowing gold and teal lighting, dark elegant background, depth of field, high detail, ' +
+    'no text, no letters, no watermark.';
+
+  try {
+    const out = await env.AI.run('@cf/black-forest-labs/flux-1-schnell', { prompt, steps: 6 });
+    if (!out?.image) throw new Error('empty');
+
+    const bytes = Uint8Array.from(atob(out.image), (c) => c.charCodeAt(0));
+    const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+
+    await env.SITE.put('img:' + id, bytes);
+    return json({ ok: true, url: '/api/img/' + id });
+  } catch {
+    return json({ ok: false, error: 'la génération a échoué, réessaie' }, 502);
+  }
+}
+
+async function handleImage(env, id) {
+  if (!env.SITE || !/^[a-f0-9]{16}$/.test(id)) return new Response('Not found', { status: 404 });
+
+  const data = await env.SITE.get('img:' + id, 'arrayBuffer');
+  if (!data) return new Response('Not found', { status: 404 });
+
+  return new Response(data, {
+    headers: {
+      'content-type': 'image/jpeg',
+      'cache-control': 'public, max-age=31536000, immutable'
+    }
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -382,6 +491,22 @@ export default {
 
     if (url.pathname === '/api/site') {
       return handleSite(request, env);
+    }
+
+    if (url.pathname === '/api/generate-image') {
+      return handleGenerateImage(request, env);
+    }
+
+    if (url.pathname.startsWith('/api/img/')) {
+      return handleImage(env, url.pathname.slice('/api/img/'.length));
+    }
+
+    if (url.pathname === '/api/subscribe') {
+      return handleSubscribe(request, env);
+    }
+
+    if (url.pathname === '/api/subscribers') {
+      return handleSubscribers(request, env);
     }
 
     if (url.pathname === '/api/chariow-import') {
