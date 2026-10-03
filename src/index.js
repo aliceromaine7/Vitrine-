@@ -174,6 +174,108 @@ function extractProductFromPage(html, finalUrl) {
   };
 }
 
+// =====================================================
+// PRIX : ancien prix barré + prix promotionnel
+// =====================================================
+
+function stripTags(value) {
+  return String(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function toNum(value) {
+  const m = String(value || '').match(/\d[\d\s\u00a0.,]*/);
+  if (!m) return NaN;
+  let x = m[0].replace(/[\s\u00a0]/g, '');
+  const lc = x.lastIndexOf(',');
+  const ld = x.lastIndexOf('.');
+
+  if (lc > -1 && ld > -1) {
+    x = lc > ld ? x.replace(/\./g, '').replace(',', '.') : x.replace(/,/g, '');
+  } else if (lc > -1) {
+    x = /,\d{1,2}$/.test(x) ? x.replace(',', '.') : x.replace(/,/g, '');
+  } else if (ld > -1 && /\.\d{3}$/.test(x)) {
+    x = x.replace(/\./g, '');
+  }
+
+  return parseFloat(x);
+}
+
+// On ignore la section « Autres produits » pour ne pas prendre le prix d'un autre produit
+function cutRelated(html) {
+  const i = html.search(/Autres produits|Produits similaires|You may also like|Other products/i);
+  return i > 0 ? html.slice(0, i) : html;
+}
+
+function findOldPrice(html, current) {
+  const region = cutRelated(html);
+  const cur = toNum(current);
+  const currency = String(current || '').replace(/^[\d\s\u00a0.,]+/, '').trim();
+
+  const accept = (text) => {
+    const n = toNum(text);
+    return text.length > 0 && text.length <= 40 && !Number.isNaN(n) && (Number.isNaN(cur) || n > cur);
+  };
+
+  const tagPatterns = [
+    /<(?:del|s|strike)\b[^>]*>([\s\S]*?)<\/(?:del|s|strike)>/gi,
+    /<[a-z0-9]+\b[^>]*class=["'][^"']*(?:line-through|old-price|original-price|compare-price|price-old)[^"']*["'][^>]*>([\s\S]*?)<\/[a-z0-9]+>/gi
+  ];
+
+  for (const re of tagPatterns) {
+    for (const m of region.matchAll(re)) {
+      const text = decodeHtml(stripTags(m[1]));
+      if (/\d/.test(text) && accept(text)) return text;
+    }
+  }
+
+  const keyRe =
+    /"(?:original_price|compare_at_price|compare_price|old_price|regular_price|price_before_discount|strikethrough_price|list_price)"\s*:\s*(?:"([^"]+)"|([\d.]+))/gi;
+
+  for (const m of region.matchAll(keyRe)) {
+    let text = (m[1] || m[2] || '').trim();
+    if (/^[\d\s.,]+$/.test(text) && currency) text = `${text} ${currency}`;
+    if (/\d/.test(text) && accept(text)) return text;
+  }
+
+  return '';
+}
+
+// Note, nombre d'apprenants, places restantes, offre limitée (texte de la page)
+function findStats(html) {
+  const clean = html.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ');
+  const text = decodeHtml(stripTags(cutRelated(clean))).replace(/\u00a0/g, ' ');
+
+  const rating = text.match(/(\d{1,3})\s?%\s*\((\d+)\s*Avis?\)/i);
+  const learners = text.match(/(\d[\d\s.,]*\+?)\s*Apprenants?/i);
+  const remaining = text.match(/Restants?\s*:?\s*(\d+)/i);
+
+  return {
+    rating: rating ? `${rating[1]}%` : '',
+    reviews: rating ? rating[2] : '',
+    learners: learners ? learners[1].replace(/\s+/g, '') : '',
+    remaining: remaining ? remaining[1] : '',
+    limited: /Offre\s+à\s+durée\s+limitée/i.test(text)
+  };
+}
+
+function priceDebug(html, current) {
+  const region = cutRelated(html);
+  const found = new Set();
+
+  for (const m of region.matchAll(/\d[\d\s\u00a0.,]*\s?(?:FCFA|F CFA|XOF|XAF|€|EUR|\$US|\$|USD)/gi)) {
+    found.add(m[0].replace(/\s+/g, ' ').trim());
+    if (found.size >= 12) break;
+  }
+
+  return {
+    current,
+    oldPrice: findOldPrice(html, current),
+    candidates: [...found],
+    hasStrikeTag: /<(?:del|s|strike)\b/i.test(region),
+    hasLineThroughClass: /line-through/i.test(region)
+  };
+}
+
 async function getProductFromApi(identifier, key) {
   try {
     const response = await fetch(`${API_BASE}/products/${encodeURIComponent(identifier)}`, {
@@ -221,6 +323,7 @@ function mapApiProduct(product) {
 
 async function handleImport(request, env) {
   const raw = new URL(request.url).searchParams.get('url') || '';
+  const wantDebug = new URL(request.url).searchParams.get('debug') === '1';
   const affiliate = cleanAffiliateUrl(raw);
 
   if (!affiliate) {
@@ -251,11 +354,14 @@ async function handleImport(request, env) {
     if (pageProduct) {
       return json({
         ok: true,
+        debug: wantDebug ? priceDebug(page.html, pageProduct.price) : undefined,
         product: {
           title: pageProduct.title,
           description: pageProduct.description,
           category: pageProduct.category,
           price: pageProduct.price,
+          oldPrice: findOldPrice(page.html, pageProduct.price),
+          ...findStats(page.html),
           image: pageProduct.image,
           // IMPORTANT : on conserve TON lien affilié
           link: affiliate.toString(),
