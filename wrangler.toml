@@ -9,3 +9,6 @@ run_worker_first = ["/api/*"]
 
 [[kv_namespaces]]
 binding = "SITE"
+
+[ai]
+binding = "AI"
